@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Pong</title>
+  <style>
+    html, body {
+      margin: 0;
+      height: 100%;
+      background: #000;
+    }
+    body {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0 100px; /* at least 100px on each side */
+      box-sizing: border-box;
+    }
+    canvas {
+      display: block;
+      width: 100%;
+      max-width: 1000px;
+      height: auto;
+      aspect-ratio: 4 / 3;
+      background: #000;
+      cursor: none;
+    }
+    @media (max-width: 720px) {
+      body { padding: 0 24px; }
+    }
+  </style>
+</head>
+<body>
+  <canvas id="game" width="800" height="600"></canvas>
+
+  <script>
+    const canvas = document.getElementById('game');
+    const ctx = canvas.getContext('2d');
+    const W = canvas.width;
+    const H = canvas.height;
+    const NEON = '#39ff14';
+
+    const PADDLE_W = 12;
+    const PADDLE_H = 100;
+    const PADDLE_SPEED = 7;
+    const BALL_SIZE = 12;
+    const WIN_SCORE = 7;
+
+    const player = { x: W - 30 - PADDLE_W, y: H / 2 - PADDLE_H / 2, score: 0 };
+    const ai     = { x: 30,                y: H / 2 - PADDLE_H / 2, score: 0 };
+    const ball   = { x: W / 2, y: H / 2, vx: 0, vy: 0 };
+
+    let state = 'ready'; // ready | playing | over
+    let keys = {};
+    let mouseY = null;
+    let winner = null;
+
+    function resetBall(direction) {
+      ball.x = W / 2;
+      ball.y = H / 2;
+      const angle = (Math.random() * 0.6 - 0.3);
+      const speed = 6;
+      ball.vx = direction * speed * Math.cos(angle);
+      ball.vy = speed * Math.sin(angle);
+    }
+
+    function startGame() {
+      player.score = 0;
+      ai.score = 0;
+      winner = null;
+      resetBall(Math.random() < 0.5 ? 1 : -1);
+      state = 'playing';
+    }
+
+    // Controls: mouse or arrow keys move the right paddle. Space starts or restarts.
+    canvas.addEventListener('mousemove', (e) => {
+      const rect = canvas.getBoundingClientRect();
+      mouseY = ((e.clientY - rect.top) / rect.height) * H;
+    });
+    canvas.addEventListener('mouseleave', () => { mouseY = null; });
+    canvas.addEventListener('click', () => { if (state !== 'playing') startGame(); });
+
+    document.addEventListener('keydown', (e) => {
+      keys[e.key] = true;
+      if (e.key === ' ' || e.key === 'Enter') {
+        e.preventDefault();
+        if (state !== 'playing') startGame();
+      }
+      if (['ArrowUp', 'ArrowDown'].includes(e.key)) e.preventDefault();
+    });
+    document.addEventListener('keyup', (e) => { keys[e.key] = false; });
+
+    function clamp(v, min, max) { return Math.max(min, Math.min(max, v)); }
+
+    function update() {
+      if (state !== 'playing') return;
+
+      // Player paddle
+      if (mouseY !== null) {
+        player.y = mouseY - PADDLE_H / 2;
+      } else {
+        if (keys['ArrowUp'])   player.y -= PADDLE_SPEED;
+        if (keys['ArrowDown']) player.y += PADDLE_SPEED;
+      }
+      player.y = clamp(player.y, 0, H - PADDLE_H);
+
+      // AI paddle: follows the ball with a slight lag
+      const aiCenter = ai.y + PADDLE_H / 2;
+      const aiSpeed = 4.5;
+      if (aiCenter < ball.y - 10) ai.y += aiSpeed;
+      else if (aiCenter > ball.y + 10) ai.y -= aiSpeed;
+      ai.y = clamp(ai.y, 0, H - PADDLE_H);
+
+      // Ball movement
+      ball.x += ball.vx;
+      ball.y += ball.vy;
+
+      // Top and bottom walls
+      if (ball.y <= 0 && ball.vy < 0) { ball.y = 0; ball.vy *= -1; }
+      if (ball.y + BALL_SIZE >= H && ball.vy > 0) { ball.y = H - BALL_SIZE; ball.vy *= -1; }
+
+      // Paddle collisions
+      if (hitsPaddle(ai) && ball.vx < 0) {
+        ball.x = ai.x + PADDLE_W;
+        bounceOff(ai);
+      }
+      if (hitsPaddle(player) && ball.vx > 0) {
+        ball.x = player.x - BALL_SIZE;
+        bounceOff(player);
+      }
+
+      // Scoring
+      if (ball.x + BALL_SIZE < 0) {
+        player.score++;
+        checkWin();
+        if (state === 'playing') resetBall(-1);
+      }
+      if (ball.x > W) {
+        ai.score++;
+        checkWin();
+        if (state === 'playing') resetBall(1);
+      }
+    }
+
+    function hitsPaddle(p) {
+      return ball.x < p.x + PADDLE_W &&
+             ball.x + BALL_SIZE > p.x &&
+             ball.y < p.y + PADDLE_H &&
+             ball.y + BALL_SIZE > p.y;
+    }
+
+    function bounceOff(p) {
+      // Angle depends on where the ball hits the paddle
+      const hit = (ball.y + BALL_SIZE / 2) - (p.y + PADDLE_H / 2);
+      const norm = hit / (PADDLE_H / 2);
+      const speed = Math.min(Math.hypot(ball.vx, ball.vy) * 1.05, 14);
+      const dir = ball.vx > 0 ? -1 : 1;
+      ball.vx = dir * speed * Math.cos(norm * 0.9);
+      ball.vy = speed * Math.sin(norm * 0.9);
+    }
+
+    function checkWin() {
+      if (player.score >= WIN_SCORE) { state = 'over'; winner = 'You win'; }
+      else if (ai.score >= WIN_SCORE) { state = 'over'; winner = 'Computer wins'; }
+    }
+
+    function glow(color, blur) {
+      ctx.shadowColor = color;
+      ctx.shadowBlur = blur;
+    }
+
+    function draw() {
+      ctx.fillStyle = '#000';
+      ctx.fillRect(0, 0, W, H);
+
+      // Center line
+      ctx.fillStyle = 'rgba(57, 255, 20, 0.35)';
+      for (let y = 0; y < H; y += 28) ctx.fillRect(W / 2 - 2, y, 4, 16);
+
+      // Paddles and ball
+      ctx.fillStyle = NEON;
+      glow(NEON, 18);
+      ctx.fillRect(ai.x, ai.y, PADDLE_W, PADDLE_H);
+      ctx.fillRect(player.x, player.y, PADDLE_W, PADDLE_H);
+      ctx.fillRect(ball.x, ball.y, BALL_SIZE, BALL_SIZE);
+      glow('transparent', 0);
+
+      // Score
+      ctx.fillStyle = NEON;
+      ctx.font = '48px monospace';
+      ctx.textAlign = 'center';
+      glow(NEON, 12);
+      ctx.fillText(ai.score, W / 2 - 60, 60);
+      ctx.fillText(player.score, W / 2 + 60, 60);
+      glow('transparent', 0);
+
+      // Overlay text
+      if (state !== 'playing') {
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
+        ctx.fillRect(0, 0, W, H);
+        ctx.fillStyle = NEON;
+        glow(NEON, 20);
+        ctx.font = '36px monospace';
+        const msg = state === 'over' ? winner : 'PONG';
+        ctx.fillText(msg, W / 2, H / 2 - 20);
+        ctx.font = '20px monospace';
+        ctx.fillText(state === 'over' ? 'Click or press Space to play again' : 'Click or press Space to start', W / 2, H / 2 + 24);
+        glow('transparent', 0);
+      }
+    }
+
+    function loop() {
+      update();
+      draw();
+      requestAnimationFrame(loop);
+    }
+
+    draw();
+    loop();
+  </script>
+</body>
+</html>
