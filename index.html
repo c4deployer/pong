@@ -5,10 +5,12 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Pong</title>
   <style>
+    :root { --bg: #000; --fg: #39ff14; }
+    :root[data-theme="light"] { --bg: #fff; --fg: #1e5bff; }
     html, body {
       margin: 0;
       height: 100%;
-      background: #000;
+      background: var(--bg);
     }
     body {
       display: flex;
@@ -23,15 +25,30 @@
       max-width: 1000px;
       height: auto;
       aspect-ratio: 4 / 3;
-      background: #000;
+      background: var(--bg);
       cursor: none;
     }
+    #theme {
+      position: fixed;
+      top: 12px;
+      right: 12px;
+      padding: 6px 10px;
+      font: 14px monospace;
+      color: var(--fg);
+      background: transparent;
+      border: 1px solid var(--fg);
+      border-radius: 4px;
+      cursor: pointer;
+      opacity: 0.7;
+    }
+    #theme:hover { opacity: 1; }
     @media (max-width: 720px) {
       body { padding: 0 24px; }
     }
   </style>
 </head>
 <body>
+  <button id="theme" type="button" title="Switch theme (T)">Theme</button>
   <canvas id="game" width="800" height="600"></canvas>
 
   <script>
@@ -39,7 +56,30 @@
     const ctx = canvas.getContext('2d');
     const W = canvas.width;
     const H = canvas.height;
-    const NEON = '#39ff14';
+
+    // Themes: black/green (default) and white/blue. Switch with the button or the T key.
+    const THEMES = {
+      dark:  { bg: '#000', fg: '#39ff14', dim: 'rgba(57, 255, 20, 0.35)', overlay: 'rgba(0, 0, 0, 0.6)' },
+      light: { bg: '#fff', fg: '#1e5bff', dim: 'rgba(30, 91, 255, 0.35)', overlay: 'rgba(255, 255, 255, 0.6)' }
+    };
+    let themeName = 'dark';
+    try { if (localStorage.getItem('pong-theme') === 'light') themeName = 'light'; } catch (e) {}
+    let theme = THEMES[themeName];
+
+    function applyTheme(name) {
+      themeName = name;
+      theme = THEMES[name];
+      document.documentElement.dataset.theme = name;
+      try { localStorage.setItem('pong-theme', name); } catch (e) {}
+    }
+    function toggleTheme() {
+      applyTheme(themeName === 'dark' ? 'light' : 'dark');
+      if (state !== 'playing') draw(); // repaint right away when the game is paused
+    }
+    applyTheme(themeName);
+
+    const themeBtn = document.getElementById('theme');
+    themeBtn.addEventListener('click', () => { toggleTheme(); themeBtn.blur(); });
 
     const PADDLE_W = 12;
     const PADDLE_H = 100;
@@ -88,6 +128,7 @@
         if (state !== 'playing') startGame();
       }
       if (['ArrowUp', 'ArrowDown'].includes(e.key)) e.preventDefault();
+      if ((e.key === 't' || e.key === 'T') && !e.repeat) toggleTheme();
     });
     document.addEventListener('keyup', (e) => { keys[e.key] = false; });
 
@@ -171,36 +212,36 @@
     }
 
     function draw() {
-      ctx.fillStyle = '#000';
+      ctx.fillStyle = theme.bg;
       ctx.fillRect(0, 0, W, H);
 
       // Center line
-      ctx.fillStyle = 'rgba(57, 255, 20, 0.35)';
+      ctx.fillStyle = theme.dim;
       for (let y = 0; y < H; y += 28) ctx.fillRect(W / 2 - 2, y, 4, 16);
 
       // Paddles and ball
-      ctx.fillStyle = NEON;
-      glow(NEON, 18);
+      ctx.fillStyle = theme.fg;
+      glow(theme.fg, 18);
       ctx.fillRect(ai.x, ai.y, PADDLE_W, PADDLE_H);
       ctx.fillRect(player.x, player.y, PADDLE_W, PADDLE_H);
       ctx.fillRect(ball.x, ball.y, BALL_SIZE, BALL_SIZE);
       glow('transparent', 0);
 
       // Score
-      ctx.fillStyle = NEON;
+      ctx.fillStyle = theme.fg;
       ctx.font = '48px monospace';
       ctx.textAlign = 'center';
-      glow(NEON, 12);
+      glow(theme.fg, 12);
       ctx.fillText(ai.score, W / 2 - 60, 60);
       ctx.fillText(player.score, W / 2 + 60, 60);
       glow('transparent', 0);
 
       // Overlay text
       if (state !== 'playing') {
-        ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
+        ctx.fillStyle = theme.overlay;
         ctx.fillRect(0, 0, W, H);
-        ctx.fillStyle = NEON;
-        glow(NEON, 20);
+        ctx.fillStyle = theme.fg;
+        glow(theme.fg, 20);
         ctx.font = '36px monospace';
         const msg = state === 'over' ? winner : 'PONG';
         ctx.fillText(msg, W / 2, H / 2 - 20);
